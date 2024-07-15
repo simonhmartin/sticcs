@@ -1,0 +1,18 @@
+[project]
+name = "sticcs"
+authors = [{name = "Simon Martin", email = "simon.martin@ed.ac.uk"}]
+description = "Model-free inference of tree sequences from unphased genotypes"
+readme = "README.md"
+requires-python = ">=3.7"
+dynamic = ["version"]
+dependencies = ["numpy >= 1.21.5", "cyvcf2"]
+
+[tool.setuptools.dynamic]
+version = {attr = "sticcs.__version__"}
+
+[project.scripts]
+sticcs = "sticcs.sticcs:main"
+
+[tool.setuptools]
+packages = ["sticcs"]
+# py-modules = ["sticcs", "dac"]
