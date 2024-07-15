@@ -1,6 +1,6 @@
 # sticcs
 
-`sticcs` is a method for inferring the series of genealogies along the genome, also called a [tree sequence](https://tskit.dev/tutorials/what_is.html). Unlike some other methods, `sticcs` **does not require phased haploitypes**, and it can work on **any ploidy level**.
+`sticcs` is a method for inferring the series of genealogies along the genome, also called a [tree sequence](https://tskit.dev/tutorials/what_is.html). Unlike some other methods, `sticcs` **does not require phased haplotypes**, and it can work on **any ploidy level**.
 
 The input for `sticcs` is polarised genotype data. This means you either need to know the ancestral allele at each site, or you need an appropriate outgroup(s) to allow inference of the derived allele.
 
@@ -8,7 +8,7 @@ A publication for is in preparation, but you can check out the [How it works](#H
 
 ### Installation
 
-`sticcs` requires [`cyvcf2`](https://github.com/brentp/cyvcf2) and [`numpy`](https://numpy.org/]. If these are not already installed, they will be downloaded and installed wehn you run the install command.
+`sticcs` requires [`cyvcf2`](https://github.com/brentp/cyvcf2) and [`numpy`](https://numpy.org/). If these are not already installed, they will be downloaded and installed wehn you run the install command.
 
 If you would like to export tree sequence objects from [`tskit`](https://tskit.dev/tskit/docs/stable/introduction.html), you will also need to install `tskit` yourself before running `sticcs`.
 
@@ -36,7 +36,7 @@ Now you can run the main command to make the treesequence:
 ```bash
 sticcs ts -i <input vcf> -o <output prefix> --output_format tskit
 ```
-This will make a treesequence file that can be loaded and analysed using [tskit](https://tskit.dev/tskit/docs/stable/introduction.html).
+This will make a treesequence file that can be loaded and analysed using [tskit](https://tskit.dev/tskit/docs/stable/introduction.html). The default for `--output_format` is `newick`, which makes a file of newick trees and a separate file giving data for each tree window.
 
 ### Python API
 
@@ -62,12 +62,12 @@ Say we have six haploid individuals and 4 SNPs:
 
 |        |  `A`  |  `B`  |  `C`  |  `D`  |  `E`  |  `F`  |
 | :----: | ----- | ----- | ----- | ----- | ----- | ----- |
-| `SNP1` |`**1**`|`**1**`|  `0`  |  `0`  |  `0`  |  `0`  |
-| `SNP2` |  `0`  |  `0`  |  `0`  |`**1**`|`**1**`|  `0`  |
-| `SNP3` |`**1**`|`**1**`|`**1**`|  `0`  |  `0`  |  `0`  |
-| `SNP4` |`**1**`|`**1**`|`**1**`|`**1**`|`**1**`|  `0`  |
+| `SNP1` |**`1`**|**`1`**|  `0`  |  `0`  |  `0`  |  `0`  |
+| `SNP2` |  `0`  |  `0`  |  `0`  |**`1`**|**`1`**|  `0`  |
+| `SNP3` |**`1`**|**`1`**|**`1`**|  `0`  |  `0`  |  `0`  |
+| `SNP4` |**`1`**|**`1`**|**`1`**|**`1`**|**`1`**|  `0`  |
 
-The SNPs are polarised, so that 0 indicates the ancestral state and `**1**` indicates the derived state.
+The SNPs are polarised, so that 0 indicates the ancestral state and **`1`** indicates the derived state.
 
 `SNP1` tells us that the tree includes a clade containing individuals `A` and `B`. `SNP2` telss us that the tree includes a clade containing individuals `D` and `E`, and so on. Using this logic, the inferred tree for this cluster of sites is:
 
@@ -84,19 +84,19 @@ Now, if instead of six phased haplotypes we have three unphased diploid genotype
 
 |        |   `A`   |   `B`   |   `C`   |
 | :----: | ------- | ------- | ------- |
-| `SNP1` |`**1/1**`|`**0/0**`|  `0/0`  |
+| `SNP1` |`1/1`|`0/0`|  `0/0`  |
 | `SNP2` |  `0/0`  |  `0/1`  |  `0/1`  |
-| `SNP3` |`**1/1**`|`**0/1**`|`**0/0**`|
-| `SNP4` |`**1/1**`|`**1/1**`|`**0/1**`|
+| `SNP3` |`1/1`|`0/1`|`0/0`|
+| `SNP4` |`1/1`|`1/1`|`0/1`|
 
 We can write these out in terms of the number of derived alleles they each carry:
 
 |        |  `A`  |  `B`  |  `C`  |
 | :----: | ----- | ----- | ----- |
-| `SNP1` |`**2**`|`**0**`|  `0`  |
+| `SNP1` |`2`|`0`|  `0`  |
 | `SNP2` |  `0`  |  `1`  |  `1`  |
-| `SNP3` |`**2**`|`**1**`|`**0**`|
-| `SNP4` |`**2**`|`**2**`|`**1**`|
+| `SNP3` |`2`|`1`|`0`|
+| `SNP4` |`2`|`2`|`1`|
 
 Once again we can use the same logic to infer the tree.
 
