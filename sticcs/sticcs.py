@@ -641,11 +641,7 @@ def main():
     
     args = parser.parse_args()
     
-    if args.output_format == "tskit":
-        if tskit not in sys.modules:
-            raise ImportError("tskit was not successfully imported")
-    
-    print(not sys.stdin.isatty(), file=sys.stderr)
+    #print(not sys.stdin.isatty(), file=sys.stderr)
     
     vcf = cyvcf2.VCF(args.input_vcf, samples=args.samples)
     
@@ -657,6 +653,10 @@ def main():
         make_vcf_with_DC_field(vcf, args.output_vcf, outgroups=args.outgroups, use_REF_as_anc=args.use_REF_as_anc)
         print("\nDone.", file=sys.stderr)
         exit()
+    
+    if args.output_format == "tskit":
+        if tskit not in sys.modules:
+            raise ImportError("tskit was not successfully imported")
     
     sampleIDs = vcf.samples
     
