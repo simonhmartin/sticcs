@@ -8,6 +8,10 @@ import sys, gzip, string
 import cyvcf2
 from sticcs.dac import *
 
+try: import tskit
+except ImportError:
+    pass
+
 def get_patterns_and_matches(der_counts, exclude_singletons=False):
     patterns, matches, n_matches = np.unique(der_counts, axis=0, return_inverse=True, return_counts=True)
     
@@ -637,6 +641,10 @@ def main():
     
     args = parser.parse_args()
     
+    if args.output_format == "tskit":
+        if tskit not in sys.modules:
+            raise ImportError("tskit was not successfully imported")
+    
     print(not sys.stdin.isatty(), file=sys.stderr)
     
     vcf = cyvcf2.VCF(args.input_vcf, samples=args.samples)
@@ -649,9 +657,6 @@ def main():
         make_vcf_with_DC_field(vcf, args.output_vcf, outgroups=args.outgroups, use_REF_as_anc=args.use_REF_as_anc)
         print("\nDone.", file=sys.stderr)
         exit()
-    
-    if args.output_format == "tskit":
-        import tskit
     
     sampleIDs = vcf.samples
     
