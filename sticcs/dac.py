@@ -59,6 +59,7 @@ def allele_counts_to_dacs(allele_counts, anc, minmax):
 
 
 #extract derived counts from a haploid matrix. This is useful for processing simulated data
+#assumes 0 is ancestral
 def get_dac_from_haploid_matrix(mat, positions, ploidies):
     
     counts_list = []
