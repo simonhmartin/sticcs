@@ -125,13 +125,11 @@ Our goal is to infer genealogies along the chromosome, and the recombination poi
 
 First, compatibility is assesed in a pairwise manner (see next section). If for example we have three adjacent SNPs, and SNP2 is compatible with both SNP1 and SNP3, but SNP1 and SNP3 are not compatible with each other, we need to decide whether the recombination point is between SNP1 and SNP2 or between SNP2 and SNP3. Secondly, adjacent genealogies tend to be very similar - usually only differing by one recombinatyion event and therefore one branch on the tree. This means that, for a focal genealogy with a given interval, there will usually be variant sites outside of that interval that are informative about the focal genealogy, and we want to include those in our inference.
 
-`sticcs` addresses these challenges by using a heuristic clustering algorithm with the following steps:
-* First each variant is labeled in terms of its 'pattern': a list giving the number of derived alleles observed in each individual
-* For each variant site *i* on the chromosome, we compile two sets of compatible patterns. The left-compatible set is the set of patterns for all varaint sites from 1 to *i* that are compatible with *i*, and where a site carrying that pattern is not separated from *i* by a variant with an incompatible pattern. The right-compatible set is similar, but for all variants between *i* and the end of the chromosome.
-* Cluster *i* is initialised as the set of patterns shared by both the left- and right-compatible sets for site *i*
-* Additional patterns from both the left- and right-compatible sets are then added to cluster *i*, starting from the pattern associated with the nearest variant site to site *i* on the chromosome and moving outwards in both directions, provided this pattern is compatible with all existing patterns in cluster *i*.
-* Any adjacent groups of sites that have identical clusters are then merged into a single cluster, and each cluster has an interval defined by the first and last of the sites that were merged.
-* Chromosome intervals are then extended to the midpoints between the clusters (and to chromosome start and end for terminal clusters) such that there are no gaps.
+The philosophy of `sticcs` is to infer the genealogy ***at each variant site*** by 'collecting' information from nearby sites. The following heuristic algorithm is used:
+    1. Label each variant site by its 'pattern': a list giving the number of derived alleles observed in each individual.
+    2. For each variant site *i*, record the ‘left-compatible set’ for *i*: the set of patterns for all variants from sites 1..*j*..*i* such that pattern *j* is compatible with pattern *i*, and where no site between *j* and *i* has a pattern that is incompatible with pattern *i*. In practice this is achieved using a drop-out algorithm: starting with an empty set of patterns and moving left-to-right from sites 1..*i*..*n*, add pattern *i* to the set and remove any patterns from the set if they are not compatible with the newly added pattern. A slower algorithm that considers re-adding dropped patterns can optionally be used, and may provide better accuracy in some circumstances.
+    3. Compile the equivalent right-compatible set for each variant using the same approach but in reverse (right-to-left, starting from site *n*).
+    4. Sequentially add patterns from both the left- and right-compatible sets to collection *i* in order of proximity (in chromosomal position) to variant *i*, provided the pattern to be added is compatible with all others that have already been added to the collection.
 
 
 ##### Defining compatible pairs of variants
@@ -165,3 +163,4 @@ As a general rule that applies to any ploidy level, we can say that all three de
 * There is at least one individual at which the number of derived alleles at the second site exceeds that at the first (implies `--0--1--` exists)
 * There is at least one individual at which the sum of derived alleles across the two sites exceeds the ploidy (implies `--1--1--` exists)
 
+Unlike haploid data. It is possible with higher ploidies that all pairs of patterns are mutually compatible, but the complete collection of variants is not compatible with a single tree. `sticcs` inherently accounts for this by adding nodes to the tree sequentially in order of diastance from the focal site, skipping those that are incompatible with the tree.
