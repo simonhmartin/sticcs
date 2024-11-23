@@ -140,7 +140,7 @@ def get_clusters(patterns, matches, positions, ploidies, second_chances=False, s
                     knockouts["by"][ID] = matches[i]
     
     if second_chances: knockouts = {"IDs":set(), "nearest":{}, "n":{}, "by":{}}
-
+    
     if not silent: print("\n    Backward search for compatible SNPs\n    ", file=sys.stderr)
     
     for i in reversed(range(0, total-1)):
@@ -204,117 +204,94 @@ def get_clusters(patterns, matches, positions, ploidies, second_chances=False, s
     
     if not silent: print("\n    Reconciling left and right clusters\n    ", file=sys.stderr)
     
-    clusters_combined = [{"IDs":set(), "n":{}} for i in range(total)]
+    clusters = [{} for i in range(total)]
     
     #reconcile forward and reverse by iterating from nearest first
     for i in range(total):
         
         if not silent and i % onePercent == 0: print(".", end="", file=sys.stderr, flush=True)
         
-        forward_unique_IDs = clusters_forward[i]["IDs"] - clusters_reverse[i]["IDs"]
-        reverse_unique_IDs = clusters_reverse[i]["IDs"] - clusters_forward[i]["IDs"]
-        #if one of these is empty, just combine all (because one is a subset of the other)
-        if len(reverse_unique_IDs) == 0:
-            clusters_combined[i]["IDs"].update(clusters_forward[i]["IDs"])
-            clusters_combined[i]["n"].update(clusters_forward[i]["n"])
-            for ID in clusters_reverse[i]["IDs"]:
-                clusters_combined[i]["n"][ID] += clusters_forward[i]["n"][ID]
-        elif len(forward_unique_IDs) == 0:
-            clusters_combined[i]["IDs"].update(clusters_reverse[i]["IDs"])
-            clusters_combined[i]["n"].update(clusters_reverse[i]["n"])
-            for ID in clusters_forward[i]["IDs"]:
-                clusters_combined[i]["n"][ID] += clusters_reverse[i]["n"][ID]
-        else:
-            #otherwise get intersection and add closest patternID iteratively
-            clusters_combined[i]["IDs"].update(clusters_forward[i]["IDs"].intersection(clusters_reverse[i]["IDs"]))
-            for ID in clusters_combined[i]["IDs"]:
-                clusters_combined[i]["n"][ID] = clusters_forward[i]["n"][ID] + clusters_reverse[i]["n"][ID]
-            
-            #Now, for the remaining mutations, we get the distance to the nearest mutation of each type
-            left_IDs = np.array(list(forward_unique_IDs))
-            left_distances = np.array([positions[i] - clusters_forward[i]["nearest"][ID] for ID in left_IDs])
-            left_order = np.argsort(left_distances)
-            left_IDs = left_IDs[left_order]
-            left_distances = left_distances[left_order]
-            
-            right_IDs = np.array(list(reverse_unique_IDs))
-            right_distances = np.array([clusters_reverse[i]["nearest"][ID] - positions[i] for ID in right_IDs])
-            right_order = np.argsort(right_distances)
-            right_IDs = right_IDs[right_order]
-            right_distances = right_distances[right_order]
-            
-            #now add them iteratively
-            left_IDs_to_add = []
-            right_IDs_to_add = []
-            i_left = 0
-            max_left = len(left_IDs)
-            i_right = 0
-            max_right = len(right_IDs)
-            while True:
-                if i_left == max_left:
-                    if i_right == max_right:
-                        break
-                    else:
-                        if compatible_with_all(right_IDs[i_right], left_IDs_to_add, patterns, ploidies):
-                            right_IDs_to_add.append(right_IDs[i_right])
-                        i_right += 1
-                elif i_right == max_right:
-                    if compatible_with_all(left_IDs[i_left], right_IDs_to_add, patterns, ploidies):
-                        left_IDs_to_add.append(left_IDs[i_left])
-                    i_left += 1
-                else:
-                    #if we get here, neither are maxed, so check which is closer
-                    if left_distances[i_left] <= right_distances[i_right]:
-                        if compatible_with_all(left_IDs[i_left], right_IDs_to_add, patterns, ploidies):
-                            left_IDs_to_add.append(left_IDs[i_left])
-                        i_left += 1
-                    else:
-                        if compatible_with_all(right_IDs[i_right], left_IDs_to_add, patterns, ploidies):
-                            right_IDs_to_add.append(right_IDs[i_right])
-                        i_right += 1
-            #finally, add these to the set
-            clusters_combined[i]["IDs"].update(set(left_IDs_to_add + right_IDs_to_add))
-            for ID in left_IDs_to_add: clusters_combined[i]["n"][ID] = clusters_forward[i]["n"][ID]
-            for ID in right_IDs_to_add: clusters_combined[i]["n"][ID] = clusters_reverse[i]["n"][ID]
+        IDs = []
+        distances = []
+        sides = []
+        ns = []
         
-        clusters_combined[i]["n"][matches[i]] -= 1 #subtract 1 for the focal ID so as not to count it twice
-   
+        #shared ones
+        for ID in clusters_forward[i]["IDs"].intersection(clusters_reverse[i]["IDs"]):
+            IDs.append(ID)
+            distances.append(min([positions[i] - clusters_forward[i]["nearest"][ID],
+                                  clusters_reverse[i]["nearest"][ID] - positions[i]]))
+            sides.append("both")
+            ns.append(clusters_forward[i]["n"][ID] + clusters_reverse[i]["n"][ID])
+            #minus 1 if it's the focal ID, so as not to count it twice
+            if ID == matches[i]: ns[-1] -= 1
+        
+        #left ones
+        for ID in clusters_forward[i]["IDs"] - clusters_reverse[i]["IDs"]:
+            IDs.append(ID)
+            distances.append(positions[i] - clusters_forward[i]["nearest"][ID])
+            sides.append("left")
+            ns.append(clusters_forward[i]["n"][ID])
+        
+        #right ones
+        for ID in clusters_reverse[i]["IDs"] - clusters_forward[i]["IDs"]:
+            IDs.append(ID)
+            distances.append(clusters_reverse[i]["nearest"][ID] - positions[i])
+            sides.append("right")
+            ns.append(clusters_reverse[i]["n"][ID])
+        
+        #now add by distance
+        order = np.argsort(distances)
+        
+        #list to hold all that are selected
+        IDs_selected = [IDs[order[0]]]
+        left_selected = [IDs[order[0]]] if sides[order[0]] == "left" else []
+        right_selected = [IDs[order[0]]] if sides[order[0]] == "right" else []
+        
+        ns_selected = []
+        
+        for j in order[1:]:
+            if sides[j] == "both":
+                #no need to check compatibility
+                IDs_selected.append(IDs[j])
+                ns_selected.append(ns[j])
+            
+            elif sides[j] == "left":
+                #check compatibility with those already added from the right
+                if compatible_with_all(IDs[j], right_selected, patterns, ploidies):
+                    IDs_selected.append(IDs[j])
+                    left_selected.append(IDs[j])
+                    ns_selected.append(ns[j])
+            
+            elif sides[j] == "right":
+                #check compatibility with those already added from the left
+                if compatible_with_all(IDs[j], left_selected, patterns, ploidies):
+                    IDs_selected.append(IDs[j])
+                    right_selected.append(IDs[j])
+                    ns_selected.append(ns[j])
+        
+        clusters[i]["IDs"] = IDs_selected
+        clusters[i]["n"] = ns_selected
+    
+    #delete RAM-heavy objects
     del clusters_forward
     del clusters_reverse
     
-    if not silent: print("\n    Merging adjacent identical intervals.\n    ", file=sys.stderr)
-    #to make tree intervals, merge adjacent intervals with the same patternIDs
-    clusters_merged = [clusters_combined[0]]
-    clusters_merged[0]["interval_idx"] = [0, 0]
+    for i in range(total):
+        clusters[i]["interval"] = [positions[i],positions[i]]
+        clusters[i]["interval_ext"] = clusters[i]["interval"][:]
     
-    for i in range(1, total):
-        
-        if not silent and i % onePercent == 0: print(".", end="", file=sys.stderr, flush=True)
-        
-        if clusters_merged[-1]["IDs"] == clusters_combined[i]["IDs"]:
-            clusters_merged[-1]["interval_idx"][1] = i
-        else:
-            clusters_merged.append(clusters_combined[i])
-            clusters_merged[-1]["interval_idx"] = [i, i]
-    
-    n_trees = len(clusters_merged)
-    
-    for i in range(n_trees):
-        clusters_merged[i]["interval"] = [positions[j] for j in clusters_merged[i]["interval_idx"]]
-        clusters_merged[i]["interval_ext"] = clusters_merged[i]["interval"][:]
-    
-    if seq_start: clusters_merged[0]["interval_ext"][0] = seq_start
-    if seq_len: clusters_merged[-1]["interval_ext"][1] = seq_len
+    if seq_start: clusters[0]["interval_ext"][0] = seq_start
+    if seq_len: clusters[-1]["interval_ext"][1] = seq_len
     
     #extend intervals to remove gaps
-    for i in range(1, n_trees):
-        new_start = np.ceil((clusters_merged[i-1]["interval"][1] + clusters_merged[i]["interval"][0])/2) 
-        clusters_merged[i]["interval_ext"][0] = new_start
-        clusters_merged[i-1]["interval_ext"][1] = new_start-1
+    for i in range(1, total):
+        new_start = np.ceil((clusters[i-1]["interval"][1] + clusters[i]["interval"][0])/2) 
+        clusters[i]["interval_ext"][0] = new_start
+        clusters[i-1]["interval_ext"][1] = new_start-1
     
-    if not silent: print(f"\n    {n_trees} tree intervals identified.\n    ", file=sys.stderr)
-    
-    return clusters_merged
+    return clusters
+
 
 
 class Tree:
@@ -404,7 +381,7 @@ def pick_children(desired_pattern, available_children_IDs, children_patterns, ig
     picked_children_pattern_sum = np.zeros(len(desired_pattern), dtype=int)
     #children are considered in the order in which they are provided
     #remove any impossible children
-    available_children_IDs = [ID for ID in available_children_IDs if (children_patterns[ID] - desired_pattern).max() == 0]
+    available_children_IDs = [ID for ID in available_children_IDs if (children_patterns[ID] - desired_pattern).max() <= 0]
     #Perfect children are those who match the desired pattern exactly
     if ignore_perfect_children:
         available_children_IDs = [ID for ID in available_children_IDs if (children_patterns[ID] - desired_pattern).min() < 0]
@@ -421,12 +398,17 @@ def pick_children(desired_pattern, available_children_IDs, children_patterns, ig
 
 
 def patterns_to_tree(patterns_array, pattern_sums=None, pattern_indices=None, ploidies=None,
-                     tree = None, node_pattern_idx_dict=None, node_pattern_dict=None,
-                     multi_pass=True, skip_sanity_checks=True, return_pattern_dicts=False):
+                     tree = None, metadata=None,
+                     multi_pass=True, skip_sanity_checks=True, return_metadata=False,
+                     report_progress=False):
     
     if ploidies is None: ploidies = [1]*patterns_array.shape[1]
     if pattern_indices is None: pattern_indices = list(range(patterns_array.shape[0]))
     if pattern_sums is None: pattern_sums = patterns_array.sum(axis=1)
+    
+    if report_progress:
+        print("Building tree with these patterns:", file=sys.stderr)
+        print(patterns_array[pattern_indices] , file=sys.stderr)
     
     n_ind = len(ploidies)
     #each mutation pattern gives the number of derived alleles per individual
@@ -437,13 +419,15 @@ def patterns_to_tree(patterns_array, pattern_sums=None, pattern_indices=None, pl
         assert np.all(patterns_array <= ploidies), "No. derived alleles per individual cannot exceed individual ploidy"
     #node patterns give the number of derived mutations you would see per individual assuming a mutation at that node
     #the indices point to these node patterns
-    indices_of_patterns_to_add = pattern_indices[:]
+    indices_to_leave = set()
+    indices_to_bench = set()
     #If there is no tree to begin with, we sart an empty one, as well as empty dict of pattern indices for each node and patterns for each node
     if not tree:
         n_leaves = sum(ploidies)
         tree = Tree(n_leaves=n_leaves)
-        node_pattern_idx_dict = {}
-        node_pattern_dict = {tree.root: ploidies}
+        metadata = {"node_pattern_idx_dict": {},
+                    "idx_count_dict": defaultdict(int),
+                    "node_pattern_dict": {tree.root: ploidies}}
         
         #Create the haploid node patterns for the leaf nodes
         node = 0
@@ -451,90 +435,174 @@ def patterns_to_tree(patterns_array, pattern_sums=None, pattern_indices=None, pl
             for j in range(ploidies[i]): #one leaf for each ploidy level
                 pattern = np.zeros(n_ind, dtype=int) #all zeros exept with a 1 at the position of the leaf
                 pattern[i] = 1
-                node_pattern_dict[node] = pattern
+                metadata["node_pattern_dict"][node] = pattern
                 node += 1
+        
+        if report_progress: print(f"Starting with empty tree {tree.as_newick()}", file=sys.stderr)
     
     else:
+        if report_progress: print(f"Starting with previous tree {tree.as_newick()}", file=sys.stderr)
         #First remove nodes that will not appear in present tree 
-        parents = [n for n in tree.parents if n != tree.root]
-        for node in parents:
-            idx = node_pattern_idx_dict[node]
-            if idx not in pattern_indices:
-                #this node should not be in the present tree
-                tree.remove_node(node)
-                node_pattern_idx_dict.pop(node)
-                node_pattern_dict.pop(node)
+        #identify which indices to remove and which ones to leave
+        for idx in pattern_indices:
+            count = metadata["idx_count_dict"][idx]
+            if count == 1: indices_to_leave.add(idx) #those present exactly once get to stay
+            elif count > 1: continue # present more than once needs to be removed in case blocking
+            else: break #if absent, everyone beyond this gets removed because might be blocking others
+        
+        #now remove or bench nodes from starting tree
+        for node,idx in list(metadata["node_pattern_idx_dict"].items()):
+            if idx in indices_to_leave:
+                pass
             else:
-                #Node(s) with this index are already in the tree, so no need to add it again
-                try: indices_of_patterns_to_add.pop(indices_of_patterns_to_add.index(idx))
-                except: pass
+                if report_progress: print(f"Removing node {node} with pattern {patterns_array[idx]}.", file=sys.stderr)
+                tree.remove_node(node)
+                metadata["node_pattern_idx_dict"].pop(node)
+                try: metadata["idx_count_dict"].pop(idx)
+                except: pass #if it's not there, it's because it failed to be added previously
+                metadata["node_pattern_dict"].pop(node)
+                if report_progress: print(tree.as_newick(), file=sys.stderr)
     
-    #now sort the indices of patterns to add based on the total number of leaves under them, so that we traverse the tree downwards
-    sums_of_patterns_to_add = pattern_sums[indices_of_patterns_to_add]
-    indices_of_patterns_to_add = [indices_of_patterns_to_add[i] for i in np.argsort(sums_of_patterns_to_add)]
-    
+    #Now add new indices where necessary
     #make a node and pick children for each pattern
     #Keep looping until there are no more free children to join into appropriate nodes
+    passnumber=0
     change_made=True
+    successes=0
+    fails=0
     while change_made:
         change_made = False
-        for idx in indices_of_patterns_to_add:
+        for idx in pattern_indices:
+            #skip those already in tree
+            if passnumber == 0 and idx in indices_to_leave: continue
+            #add those that need adding
             desired_pattern = patterns_array[idx]
             picked_children = None
+            if report_progress: print(f"Pass {passnumber}. Searching for children for new node with pattern {patterns_array[idx]}.")
             for node in tree.parents:
                 #only consider parent if its pattern is inclusive of the desired pattern
-                pattern_difference = node_pattern_dict[node] - desired_pattern
+                pattern_difference = metadata["node_pattern_dict"][node] - desired_pattern
                 if np.any(pattern_difference < 0) or pattern_difference.sum() == 0: continue
                 #only consider nodes with more than two children
                 if len(tree.node_children[node]) < 3: continue
                 #if we get here, we can try to pick children
-                picked_children = pick_children(desired_pattern=desired_pattern, available_children_IDs=tree.node_children[node], children_patterns=node_pattern_dict)
+                picked_children = pick_children(desired_pattern=desired_pattern,
+                                                available_children_IDs=tree.node_children[node], children_patterns=metadata["node_pattern_dict"])
                 #if none, or all children of the node were picked, then there is nothing to do
                 if not picked_children: continue
                 #if we get here, we have viable children, so break
                 break
             
             if picked_children:
+                successes+=1
                 #new parent node
                 new_node = tree.add_node(picked_children)
-                node_pattern_idx_dict[new_node] = idx
-                node_pattern_dict[new_node] = desired_pattern
+                metadata["node_pattern_idx_dict"][new_node] = idx
+                metadata["node_pattern_dict"][new_node] = desired_pattern
+                metadata["idx_count_dict"][idx] += 1
                 
                 change_made = True
+                if report_progress: print(tree.as_newick(), file=sys.stderr)
             
             else:
-                if multi_pass: continue
-                else: raise Exception(f"Mutation pattern {desired_pattern} not compatible with current tree.")
+                if passnumber == 0: fails+=1
+                continue
+        
+        if report_progress: print(f"{successes} nodes were incorporated and {fails} failures occured.")
         
         if not multi_pass: break
+        passnumber +=1
     
-    if return_pattern_dicts: return (tree, node_pattern_idx_dict, node_pattern_dict,)
+    if return_metadata: return (tree, metadata,)
     return tree
 
 
-def infer_trees(patterns, ploidies, clusters, multi_pass=True, leaf_names=None, include_pattern_indices=False, silent=False):
+def infer_trees(patterns, ploidies, clusters, multi_pass=True, leaf_names=None, include_metadata=False, silent=False):
     node_labels = dict(enumerate(leaf_names)) if leaf_names else None
     pattern_sums = patterns.sum(axis=1)
     total = len(clusters)
     onePercent = int(np.ceil(total/100))
     tree = None
-    node_pattern_idx_dict = None
-    node_pattern_dict = None
-    for i in range(total):
+    metadata = None
+    for i in range(total + 1):
         if not silent and i % onePercent == 0: print(".", end="", file=sys.stderr, flush=True)
         
-        pattern_indices = list(clusters[i]["IDs"])
+        if i == 0:
+            pattern_indices = np.array(clusters[i]["IDs"])
+            need_to_yield = False
+        else:
+            need_to_yield = True
+            if i != total:
+                pattern_indices = np.array(clusters[i]["IDs"])
+                if len(pattern_indices) == len(metadata["idx_count_dict"]):
+                    if set([metadata["idx_count_dict"][idx] for idx in pattern_indices]) == set([1]):
+                        #tree is the same - just update interval
+                        tree.interval[1] = clusters[i]["interval_ext"][1]
+                        need_to_yield = False
         
-        tree, node_pattern_idx_dict, node_pattern_dict = patterns_to_tree(patterns_array=patterns, pattern_sums=pattern_sums,
-                                                                          pattern_indices=pattern_indices, ploidies=ploidies,
-                                                                          tree = tree, node_pattern_idx_dict = node_pattern_idx_dict,
-                                                                          node_pattern_dict = node_pattern_dict, multi_pass=multi_pass,
-                                                                          return_pattern_dicts=True)
+        if need_to_yield:
+            #print("yielding previous tree", file=sys.stderr)
+            if include_metadata: yield (tree, metadata,)
+            else: yield tree
+        
+        if i == total: break
+        
+        #if we get here, we have a new tree to make
+        tree, metadata = patterns_to_tree(patterns_array=patterns, pattern_sums=pattern_sums,
+                                          pattern_indices=pattern_indices, ploidies=ploidies,
+                                          tree = tree, metadata=metadata,
+                                          multi_pass=multi_pass,
+                                          return_metadata=True)
+        
+        #debugging option to make a new tree for each cluster
+        #tree = patterns_to_tree(patterns_array=patterns, pattern_sums=pattern_sums,
+                                #pattern_indices=pattern_indices, ploidies=ploidies,
+                                #multi_pass=multi_pass, return_metadata=True)
         
         tree.interval = clusters[i]["interval_ext"]
+
+
+
+def infer_ts(patterns, ploidies, clusters, multi_pass=True, silent=False):
+    n_leaves = sum(ploidies)
+    tableCollection = tskit.TableCollection(clusters[-1]["interval_ext"][1])
+    for i in range(n_leaves):
+        tableCollection.nodes.add_row(flags=1, time=0) #add node for each leaf and flag these as samples
+    last_node = tableCollection.nodes.add_row(time=n_leaves) #Add root. Time is defined as number of descenents. Crude but works for now.
+    current_edges = set()
+    current_edge_left_pos = {}
+    for tree, metadata in infer_trees(patterns, ploidies, clusters, multi_pass=multi_pass, include_metadata=True, silent=silent):
         
-        if include_pattern_indices: yield (tree, pattern_indices,)
-        else: yield tree
+        #add any new nodes to the node table
+        for node in sorted([i for i in metadata["node_pattern_idx_dict"].keys() if i > last_node]):
+            _node_ = tableCollection.nodes.add_row(time=metadata["node_pattern_dict"][node].sum()) #time is number of descendents. Crude but it works.
+            assert node == _node_, f"Expected next node to be {_node_} but found {node} instead."
+            last_node = node
+        
+        #add any edges if they are no longer in this tree
+        parent_child_edges = set(tree.get_parent_child_edges())
+        for edge in current_edges - parent_child_edges:
+            #these ones are finished, so add them to the table
+            tableCollection.edges.add_row(left=current_edge_left_pos.pop(edge), right=last_tree_right_pos,
+                                          parent=edge[0], child=edge[1])
+        
+        for edge in parent_child_edges - current_edges:
+            #these are new starting edges, so add left pos here
+            current_edge_left_pos[edge] = tree.interval[0]-1 #treesequence tables use 0-based positions, left inclusive right exclusive
+        
+        #update variables before moving on to next tree
+        current_edges = parent_child_edges
+        last_tree_right_pos = tree.interval[1]
+    
+    #add remaining edges from the final tree
+    for edge in current_edges:
+        tableCollection.edges.add_row(left=current_edge_left_pos.pop(edge), right=last_tree_right_pos,
+                                      parent=edge[0], child=edge[1])
+    
+    tableCollection.sort()
+    
+    return tableCollection.tree_sequence()
+
 
 
 def infer_ts(patterns, ploidies, clusters, multi_pass=True, silent=False):
@@ -706,24 +774,26 @@ def main():
         
         else:
             tree_generator = infer_trees(patterns, ploidies, clusters, multi_pass = not args.single_pass, leaf_names=leaf_names,
-                                        include_pattern_indices=True, silent=args.silent)
+                                        include_metadata=True, silent=args.silent)
             
             with open(args.out_prefix + "." + chrom + ".windowdata.tsv", "wt") as out_data:
                 out_data.write("chrom\tstart\tend")
                 if args.output_mutation_info: out_data.write("\tpattern_indices")
                 out_data.write("\n")
                 with gzip.open(args.out_prefix + "." + chrom + ".trees.gz", "wt") as out_trees:
-                        for tree, pattern_indices in tree_generator:
-                            out_trees.write(tree.as_newick(node_labels=leaf_names) + "\n")
-                            out_data.write("\t".join([chrom, str(tree.interval[0]), str(tree.interval[1])]))
-                            if args.output_mutation_info: out_data.write("\t" + ",".join([str(i) for i in pattern_indices]))
-                            out_data.write("\n")
+                    for tree, metadata in tree_generator:
+                        out_trees.write(tree.as_newick(node_labels=leaf_names) + "\n")
+                        out_data.write("\t".join([chrom, str(tree.interval[0]), str(tree.interval[1])]))
+                        if args.output_mutation_info:
+                            metadata["idx_count_dict"]
+                            out_data.write("\t" + ",".join([f"{k}:{v}" for k,v in d.items()]))
+                        out_data.write("\n")
             
             if args.output_mutation_info:
                 np.savetxt(args.out_prefix + "." + chrom + ".patterns.tsv.gz", np.column_stack([n_matches, patterns]), delimiter="\t", fmt='%i')
         
         print("\nDone\n", file=sys.stderr)
-    
+
 
 
 if __name__ == '__main__':
