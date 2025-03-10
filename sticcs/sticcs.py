@@ -517,50 +517,56 @@ def patterns_to_tree(patterns_array, pattern_sums=None, pattern_indices=None, pl
     return tree
 
 
+
 def infer_trees(patterns, ploidies, clusters, multi_pass=True, leaf_names=None, include_metadata=False, silent=False):
     node_labels = dict(enumerate(leaf_names)) if leaf_names else None
     pattern_sums = patterns.sum(axis=1)
     total = len(clusters)
     onePercent = int(np.ceil(total/100))
-    tree = None
-    metadata = None
-    for i in range(total + 1):
+    
+    pattern_indices = np.array(clusters[0]["IDs"])
+    
+    tree, metadata = patterns_to_tree(patterns_array=patterns, pattern_sums=pattern_sums,
+                                        pattern_indices=pattern_indices, ploidies=ploidies,
+                                        tree = None, metadata=None,
+                                        multi_pass=multi_pass,
+                                        return_metadata=True)
+    
+    tree.interval = clusters[0]["interval_ext"][:]
+    
+    for i in range(1,total):
         if not silent and i % onePercent == 0: print(".", end="", file=sys.stderr, flush=True)
         
-        if i == 0:
-            pattern_indices = np.array(clusters[i]["IDs"])
-            need_to_yield = False
+        pattern_indices = np.array(clusters[i]["IDs"])
+        
+        identical_to_previous = False
+        
+        if len(pattern_indices) == len(metadata["idx_count_dict"]): #same number of patterns as there are in the previous tree. They might be identical
+            if set([metadata["idx_count_dict"][idx] for idx in pattern_indices]) == set([1]):
+                #tree is the same - just update interval
+                identical_to_previous = True
+        
+        if identical_to_previous:
+            tree.interval[1] = clusters[i]["interval_ext"][1]
         else:
-            need_to_yield = True
-            if i != total:
-                pattern_indices = np.array(clusters[i]["IDs"])
-                if len(pattern_indices) == len(metadata["idx_count_dict"]):
-                    if set([metadata["idx_count_dict"][idx] for idx in pattern_indices]) == set([1]):
-                        #tree is the same - just update interval
-                        tree.interval[1] = clusters[i]["interval_ext"][1]
-                        need_to_yield = False
-        
-        if need_to_yield:
-            #print("yielding previous tree", file=sys.stderr)
-            if include_metadata: yield (tree, metadata,)
-            else: yield tree
-        
-        if i == total: break
-        
-        #if we get here, we have a new tree to make
-        tree, metadata = patterns_to_tree(patterns_array=patterns, pattern_sums=pattern_sums,
-                                          pattern_indices=pattern_indices, ploidies=ploidies,
-                                          tree = tree, metadata=metadata,
-                                          multi_pass=multi_pass,
-                                          return_metadata=True)
-        
-        #debugging option to make a new tree for each cluster
-        #tree = patterns_to_tree(patterns_array=patterns, pattern_sums=pattern_sums,
-                                #pattern_indices=pattern_indices, ploidies=ploidies,
-                                #multi_pass=multi_pass, return_metadata=True)
-        
-        tree.interval = clusters[i]["interval_ext"]
-
+            yield (tree, metadata,) if include_metadata else tree
+            
+            # new tree to make
+            tree, metadata = patterns_to_tree(patterns_array=patterns, pattern_sums=pattern_sums,
+                                            pattern_indices=pattern_indices, ploidies=ploidies,
+                                            tree = tree, metadata=metadata,
+                                            multi_pass=multi_pass,
+                                            return_metadata=True)
+            
+            #debugging option to make a new tree for each cluster
+            #tree, metadata = patterns_to_tree(patterns_array=patterns, pattern_sums=pattern_sums,
+                                    #pattern_indices=pattern_indices, ploidies=ploidies,
+                                    #multi_pass=multi_pass, return_metadata=True)
+            
+            tree.interval = clusters[i]["interval_ext"][:]
+    
+    #return final tree
+    yield (tree, metadata,) if include_metadata else tree
 
 
 def infer_ts(patterns, ploidies, clusters, multi_pass=True, silent=False):
@@ -593,61 +599,6 @@ def infer_ts(patterns, ploidies, clusters, multi_pass=True, silent=False):
         #update variables before moving on to next tree
         current_edges = parent_child_edges
         last_tree_right_pos = tree.interval[1]
-    
-    #add remaining edges from the final tree
-    for edge in current_edges:
-        tableCollection.edges.add_row(left=current_edge_left_pos.pop(edge), right=last_tree_right_pos,
-                                      parent=edge[0], child=edge[1])
-    
-    tableCollection.sort()
-    
-    return tableCollection.tree_sequence()
-
-
-
-def infer_ts(patterns, ploidies, clusters, multi_pass=True, silent=False):
-    pattern_sums = patterns.sum(axis=1)
-    total = len(clusters)
-    n_leaves = sum(ploidies)
-    tree = None
-    node_pattern_idx_dict = None
-    node_pattern_dict = None
-    tableCollection = tskit.TableCollection(clusters[-1]["interval_ext"][1])
-    for i in range(n_leaves):
-        tableCollection.nodes.add_row(flags=1, time=0) #add node for each leaf and flag these as samples
-    last_node = tableCollection.nodes.add_row(time=n_leaves) #Add root. Time is defined as number of descenents. Crude but works for now.
-    current_edges = set()
-    current_edge_left_pos = {}
-    for cluster in clusters:
-        
-        pattern_indices = list(cluster["IDs"])
-                
-        tree, node_pattern_idx_dict, node_pattern_dict = patterns_to_tree(patterns_array=patterns, pattern_sums=pattern_sums,
-                                                                          pattern_indices=pattern_indices, ploidies=ploidies,
-                                                                          tree = tree, node_pattern_idx_dict = node_pattern_idx_dict,
-                                                                          node_pattern_dict = node_pattern_dict, multi_pass=multi_pass,
-                                                                          return_pattern_dicts=True)
-        
-        #add any new nodes to the node table
-        for node in sorted([i for i in node_pattern_idx_dict.keys() if i > last_node]):
-            _node_ = tableCollection.nodes.add_row(time=node_pattern_dict[node].sum()) #time is number of descendents. Crude but it works.
-            assert node == _node_, f"Expected next node to be {_node_} but found {node} instead."
-            last_node = node
-        
-        #add any edges if they are no longer in this tree
-        parent_child_edges = set(tree.get_parent_child_edges())
-        for edge in current_edges - parent_child_edges:
-            #these ones are finished, so add them to the table
-            tableCollection.edges.add_row(left=current_edge_left_pos.pop(edge), right=last_tree_right_pos,
-                                          parent=edge[0], child=edge[1])
-        
-        for edge in parent_child_edges - current_edges:
-            #these are new starting edges, so add left pos here
-            current_edge_left_pos[edge] = cluster["interval_ext"][0]-1 #treesequence tables use 0-based positions, left inclusive right exclusive
-        
-        #update variables before moving on to next tree
-        current_edges = parent_child_edges
-        last_tree_right_pos = cluster["interval_ext"][1]
     
     #add remaining edges from the final tree
     for edge in current_edges:
