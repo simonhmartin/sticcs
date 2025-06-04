@@ -295,15 +295,27 @@ def get_clusters(patterns, matches, positions, ploidies, second_chances=False, s
 
 
 class Tree:
-    def __init__(self, n_leaves, interval=None):
-        self.leaves = list(range(n_leaves)) #integers from zero
-        self.root = n_leaves # root is always the very next integer
-        self.parents = [self.root] #a list of all non-leaf nodes
-        self.node_children = {self.root: self.leaves} #start with a polytomy
-        for leaf in self.leaves: self.node_children[leaf] = []
-        self.node_parent = dict([(leaf, self.root) for leaf in self.leaves])
+    def __init__(self, n_leaves=1, objects=None, interval=None):
+        #if no info is given except number of leaves, make a fresh tree with no internal nodes
+        if objects is None:
+            self.leaves = list(range(n_leaves)) #integers from zero
+            self.root = n_leaves # root is always the very next integer
+            self.parents = [self.root] #a list of all non-leaf nodes
+            self.node_children = {self.root: self.leaves} #start with a polytomy
+            for leaf in self.leaves: self.node_children[leaf] = []
+            self.node_parent = dict([(leaf, self.root) for leaf in self.leaves])
+            self.interval = interval
+        
+        #otherwise the user has given everything we need to make a complete Tree
+        else:
+            self.leaves = objects["leaves"]
+            self.root = objects["root"]
+            self.parents = objects["parents"]
+            self.node_children = objects["node_children"]
+            self.node_parent = objects["node_parent"]
+            self.interval = objects["interval"]
+        
         self.next_node = self.root + 1
-        self.interval = interval
     
     def children(self, node): #just added this so that the tree class behaves like a tskit tree
         return self.node_children[node]
