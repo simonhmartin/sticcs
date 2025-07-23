@@ -350,6 +350,10 @@ class Tree:
         for child in children: self.node_parent[child] = new_parent
         self.parents.pop(self.parents.index(node))
     
+    def nodes(self):
+        #a function similar to the the nodes() function of a tskit tree
+        return self.leaves + self.parents
+    
     def _newick_(self, node=None, node_labels=None):
         if not node: node = self.root
         _string = "("
