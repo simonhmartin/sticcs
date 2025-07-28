@@ -670,7 +670,7 @@ def main():
     ts_parser.add_argument("--samples", help="SampleIDs to include (NOTE, order is ignored)", action = "store", nargs = "+")
     ts_parser.add_argument("--ploidy", help="Sample ploidy if all the same. Use --ploidy_file if samples differ.", action = "store", type=int)
     ts_parser.add_argument("--ploidy_file", help="File with samples names and ploidy as columns", action = "store")
-    ts_parser.add_argument("--allow_second_chances", help="Consider SNPs that are separated by incompatible SNPs", action='store_true')
+    ts_parser.add_argument("--no_second_chances", help="Do not consider SNPs that are separated by incompatible SNPs", action='store_true')
     ts_parser.add_argument("--single_pass", help="Single pass when building trees (only relevant for ploidy > 1)", action='store_true')
     ts_parser.add_argument("--silent", help="Do not report on progress", action='store_true')
     
@@ -729,7 +729,7 @@ def main():
         
         print("\nFinding clusters...", file=sys.stderr)
         clusters = get_clusters(patterns, matches, positions, ploidies=ploidies,
-                                second_chances=args.allow_second_chances,
+                                second_chances= not args.no_second_chances,
                                 seq_start=1, seq_len=chromLenDict[chrom],
                                 silent=args.silent)
         
