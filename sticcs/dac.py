@@ -29,7 +29,7 @@ def get_anc_from_field(variant):
     # some VCFs (e.g. from 1000G) have many values in the AA field: take the 1st
     ancestral = ancestral.split("|")[0].upper()
     if ancestral == "." or ancestral == "": return None
-    return ancestral
+    return int(ancestral)
 
 
 def allele_counts_to_dacs(allele_counts, anc, minmax):
@@ -90,7 +90,7 @@ def make_vcf_with_DC_field(vcf, out_name, outgroups=None, use_REF_as_anc=False):
     
     if outgroups is None and not use_REF_as_anc:
         try: vcf.get_header_type("AA")
-        except: raise Exception("The VCF has no ancestral allele (AA) field. To infer this you must specify outgroups.")
+        except: raise Exception("The VCF has no ancestral allele (AA) field. To infer this you can specify outgroups, or use use_REF_as_anc (if this is biologically plausible!)")
     
     outgroup_indices = [vcf.samples.index(sample) for sample in outgroups] if outgroups else None
 
