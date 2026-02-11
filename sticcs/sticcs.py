@@ -690,7 +690,7 @@ def main():
         exit()
     
     if args.output_format == "tskit":
-        if tskit not in sys.modules:
+        if 'tskit' not in sys.modules:
             raise ImportError("tskit was not successfully imported")
     
     sampleIDs = vcf.samples
