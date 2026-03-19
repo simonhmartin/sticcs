@@ -25,12 +25,32 @@ def get_anc_from_outgroup(outgroup_allele_counts):
     return None
 
 def get_anc_from_field(variant):
-    ancestral = variant.INFO.get("AA", ".")  # "." means unknown
-    # some VCFs (e.g. from 1000G) have many values in the AA field: take the 1st
-    ancestral = ancestral.split("|")[0].upper()
-    if ancestral == "." or ancestral == "": return None
-    return int(ancestral)
-
+    # 1. Extract the AA field; default to None if missing
+    ancestral = variant.INFO.get("AA")
+    if ancestral is None:
+        return None
+    
+    # 2. Handle bytes vs string (common in cyvcf2/Python 3)
+    if isinstance(ancestral, bytes):
+        ancestral = ancestral.decode('utf-8')
+        
+    # 3. 1000G format is often 'Allele|IndelREF|IndelALT|IndelType'
+    # We only want the first part (the allele)
+    ancestral_allele = ancestral.split("|")[0].upper()
+    
+    # 4. Check for unknown markers ('.' or '?')
+    if ancestral_allele in (".", "?", ""):
+        return None
+        
+    # 5. Determine numeric encoding
+    if ancestral_allele == variant.REF:
+        return 0
+    elif ancestral_allele in variant.ALT:
+        # returns 1 for 1st ALT, 2 for 2nd, etc.
+        return 1 + variant.ALT.index(ancestral_allele)
+    else:
+        # Ancestral matches neither REF nor ALT (can happen in rare cases)
+        return None
 
 def allele_counts_to_dacs(allele_counts, anc, minmax):
     n_alleles = allele_counts.shape[1]
