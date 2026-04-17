@@ -718,6 +718,10 @@ def main():
         
         usable_sites = np.where(no_missing & informative)
         
+        if len(usable_sites[0]) == 0:
+            print(f"\nWARNING: No usable SNPs for {chrom}. Skipping...", file=sys.stderr, flush=True)
+            continue
+        
         #der counts and positions
         der_counts = der_counts[usable_sites]
         
