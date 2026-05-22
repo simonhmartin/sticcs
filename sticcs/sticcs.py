@@ -68,7 +68,7 @@ def get_clusters(patterns, matches, positions, ploidies, second_chances=False, s
     
     if not silent: print("\n    Making base clusters.\n    ", file=sys.stderr)
     
-    onePercent = int(total/100)
+    onePercent = max(1, int(total/100))
     
     # Make the simplesty possible clusters, with one SNP in each
     # We make two versions of this, because we'll later import SNPs from left and right separately
